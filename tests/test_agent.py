@@ -54,3 +54,84 @@ class TestAgentOutput:
 
         # Check that answer is non-empty
         assert len(data["answer"]) > 0, "'answer' must not be empty"
+
+
+class TestDocumentationAgent:
+    """Test that agent.py uses tools correctly for documentation questions."""
+
+    def test_agent_uses_read_file_for_merge_conflict_question(self):
+        """Test that agent uses read_file tool when asked about merge conflicts."""
+        project_root = Path(__file__).parent.parent
+        agent_path = project_root / "agent.py"
+
+        result = subprocess.run(
+            f"uv run {agent_path} 'How do you resolve a merge conflict?'",
+            capture_output=True,
+            text=True,
+            timeout=60,
+            shell=True,
+            cwd=project_root,
+        )
+
+        if result.returncode != 0:
+            print(f"stderr: {result.stderr}", file=sys.stderr)
+
+        stdout = result.stdout.strip()
+        assert stdout, f"stdout should not be empty. stderr: {result.stderr}"
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            raise AssertionError(f"stdout is not valid JSON: {e}\nstdout: {stdout}")
+
+        # Check required fields
+        assert "answer" in data, "JSON must contain 'answer' field"
+        assert "tool_calls" in data, "JSON must contain 'tool_calls' field"
+        assert "source" in data, "JSON must contain 'source' field"
+
+        # Check that read_file was used
+        tool_calls = data["tool_calls"]
+        assert len(tool_calls) > 0, "Agent should have called at least one tool"
+        
+        tools_used = [tc.get("tool") for tc in tool_calls]
+        assert "read_file" in tools_used, f"Agent should use read_file tool. Tools used: {tools_used}"
+
+        # Check that source contains wiki/git-workflow.md
+        source = data.get("source", "")
+        assert "git-workflow.md" in source, f"Source should reference git-workflow.md, got: {source}"
+
+    def test_agent_uses_list_files_for_wiki_question(self):
+        """Test that agent uses list_files tool when asked about wiki files."""
+        project_root = Path(__file__).parent.parent
+        agent_path = project_root / "agent.py"
+
+        result = subprocess.run(
+            f"uv run {agent_path} 'What files are in the wiki?'",
+            capture_output=True,
+            text=True,
+            timeout=60,
+            shell=True,
+            cwd=project_root,
+        )
+
+        if result.returncode != 0:
+            print(f"stderr: {result.stderr}", file=sys.stderr)
+
+        stdout = result.stdout.strip()
+        assert stdout, f"stdout should not be empty. stderr: {result.stderr}"
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            raise AssertionError(f"stdout is not valid JSON: {e}\nstdout: {stdout}")
+
+        # Check required fields
+        assert "answer" in data, "JSON must contain 'answer' field"
+        assert "tool_calls" in data, "JSON must contain 'tool_calls' field"
+
+        # Check that list_files was used
+        tool_calls = data["tool_calls"]
+        assert len(tool_calls) > 0, "Agent should have called at least one tool"
+        
+        tools_used = [tc.get("tool") for tc in tool_calls]
+        assert "list_files" in tools_used, f"Agent should use list_files tool. Tools used: {tools_used}"
