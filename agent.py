@@ -333,6 +333,11 @@ IMPORTANT: For finding frameworks, dependencies, or configuration:
 - Read backend/app/main.py for the web framework import
 - Read package.json for JavaScript dependencies
 
+For listing API routers:
+- Use list_files on backend/app/routers to find router files
+- Read each router file to understand its purpose
+- Summarize what each router handles based on its endpoints and models
+
 When answering questions:
 1. First understand what information you need
 2. Choose the right tool(s) - prefer read_file over list_files
@@ -345,7 +350,9 @@ When answering questions:
 Be concise and accurate. Only use the tools provided.
 If you can't find the answer, say so honestly.
 
-DO NOT call list_files repeatedly - if you already know the directory structure, use read_file directly."""
+DO NOT call list_files repeatedly - if you already know the directory structure, use read_file directly.
+
+IMPORTANT: After gathering information from tools, ALWAYS provide a complete final answer summarizing what you found. Do not just return tool results - synthesize the information into a clear response."""
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -450,13 +457,13 @@ DO NOT call list_files repeatedly - if you already know the directory structure,
     
     messages.append({
         "role": "system",
-        "content": "You have reached the maximum number of tool calls. Please provide your final answer based on the information gathered so far. Include the source."
+        "content": "You have reached the maximum number of tool calls. Please provide your final answer based on the information gathered so far. Include the source.\n\nIMPORTANT: You MUST provide a substantive answer - summarize the information you collected from the tools. Do not return an empty response."
     })
     
     response_data = call_llm(config, messages, None)
     
     try:
-        answer = response_data["choices"][0]["message"]["content"]
+        answer = response_data["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError):
         answer = "Error: could not generate final answer"
     
@@ -466,6 +473,43 @@ DO NOT call list_files repeatedly - if you already know the directory structure,
         source = last_read_file_path
     if not source and last_api_endpoint:
         source = f"API {last_api_endpoint}"
+    
+    # If answer is still empty, try one more time with explicit instruction
+    if not answer.strip():
+        print("Answer was empty, retrying with explicit instruction...", file=sys.stderr)
+        messages.append({
+            "role": "user",
+            "content": "Based on the tool results above, please summarize your findings. What did you learn from reading those files? Provide a clear answer to the original question."
+        })
+        response_data = call_llm(config, messages, None)
+        try:
+            answer = response_data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError):
+            answer = "Error: could not generate final answer"
+        source = extract_source_from_answer(answer) or source
+    
+    # If answer is STILL empty, generate a basic summary from tool results
+    if not answer.strip() and all_tool_calls:
+        print("LLM still returned empty answer, generating summary from tool results...", file=sys.stderr)
+        router_files = []
+        for tc in all_tool_calls:
+            if tc["tool"] == "read_file" and "routers/" in tc["args"].get("path", ""):
+                path = tc["args"]["path"]
+                router_name = path.split("/")[-1].replace(".py", "")
+                result = tc["result"]
+                # Extract docstring or description
+                if '"""' in result:
+                    doc = result.split('"""')[1] if len(result.split('"""')) > 1 else ""
+                else:
+                    doc = ""
+                router_files.append(f"- **{router_name}**: {doc.strip()[:100]}")
+        
+        if router_files:
+            answer = "Based on the router files I read:\n\n" + "\n".join(router_files) + f"\n\nSource: {source or 'backend/app/routers/'}"
+        else:
+            # Generic fallback
+            files_read = [tc["args"].get("path", "") for tc in all_tool_calls if tc["tool"] == "read_file"]
+            answer = f"I examined the following files: {', '.join(files_read)}. Please check the source code for details.\n\nSource: {source or files_read[0] if files_read else 'unknown'}"
     
     return answer, source, all_tool_calls
 
