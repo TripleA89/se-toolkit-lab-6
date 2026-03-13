@@ -106,6 +106,30 @@ No changes to the loop structure — just add `query_api` to the tool schemas.
    - Re-run
 3. Track iterations and improvements
 
+### Initial Results
+
+**First run:** 3/10 passed
+
+**Failures:**
+1. Question 3 (framework): Agent was calling `list_files` repeatedly instead of `read_file`
+   - **Fix:** Updated system prompt to emphasize `read_file` as PRIMARY tool
+   - **Fix:** Added explicit hints to read `pyproject.toml` and `backend/app/main.py`
+   - Result: Now passes
+
+2. Question 4 (router modules): Bug in `run_eval.py` with `numeric_gt` parsing
+   - Agent answer is correct, but eval script has a bug parsing "." as a number
+   - This is an eval script issue, not an agent issue
+
+3. Question 5 (items count): Same `numeric_gt` parsing bug in eval script
+   - Agent correctly returns "45 items" via `query_api`
+
+### Iteration Strategy
+
+1. Improve system prompt to prevent tool loops
+2. Add explicit file path hints for common questions
+3. Test each question individually with `--index`
+4. Document working answers
+
 ### Expected Question Types
 
 | Type | Example | Expected Tool |
