@@ -10,48 +10,56 @@ import httpx
 
 
 def load_config() -> dict:
-    """Load configuration from environment variables and .env files."""
+    """Load configuration from environment variables and .env files.
+    
+    Environment variables take precedence (for autochecker).
+    Falls back to .env files for local development.
+    """
     config = {}
     
-    # Load from .env.agent.secret for LLM config
-    env_file = Path(__file__).parent / ".env.agent.secret"
-    if env_file.exists():
-        with open(env_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
-    
-    # Load from .env.docker.secret for LMS_API_KEY
-    docker_env_file = Path(__file__).parent / ".env.docker.secret"
-    if docker_env_file.exists():
-        with open(docker_env_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
-    
-    # Override with actual environment variables (for autochecker)
+    # First, check environment variables (autochecker injects these)
     for key in ["LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "LMS_API_KEY", "AGENT_API_BASE_URL"]:
         if key in os.environ:
             config[key] = os.environ[key]
     
+    # Fall back to .env.agent.secret for LLM config (local development)
+    if "LLM_API_KEY" not in config or "LLM_API_BASE" not in config or "LLM_MODEL" not in config:
+        env_file = Path(__file__).parent / ".env.agent.secret"
+        if env_file.exists():
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        config[key.strip()] = value.strip()
+    
+    # Fall back to .env.docker.secret for LMS_API_KEY (local development)
+    if "LMS_API_KEY" not in config:
+        docker_env_file = Path(__file__).parent / ".env.docker.secret"
+        if docker_env_file.exists():
+            with open(docker_env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        config[key.strip()] = value.strip()
+
     # Validate required keys
     required_keys = ["LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL"]
-    for key in required_keys:
-        if key not in config:
-            print(f"Error: Missing {key} in config", file=sys.stderr)
-            sys.exit(1)
-    
+    missing_keys = [key for key in required_keys if key not in config]
+    if missing_keys:
+        print(f"Error: Missing required config keys: {missing_keys}", file=sys.stderr)
+        print(f"Available keys: {list(config.keys())}", file=sys.stderr)
+        print(f"Environment variables: LLM_API_KEY={'set' if 'LLM_API_KEY' in os.environ else 'NOT SET'}", file=sys.stderr)
+        sys.exit(1)
+
     # Set defaults
     config.setdefault("AGENT_API_BASE_URL", "http://localhost:42002")
-    
+
     return config
 
 
